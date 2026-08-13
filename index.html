@@ -177,11 +177,14 @@
     const c = canastillasHoyCache.find(x => String(x.id_canastilla) === idBuscado);
     const el = document.getElementById('scanResult');
     if(c){
+      // Ya la conocíamos de la lista de hoy: mostramos su dirección/ruta
       el.innerHTML = '✅ <b>' + (c.direccion || 'Canastilla ' + c.id_canastilla) + '</b>' +
         (c.ruta_del_dia ? ' · Ruta ' + c.ruta_del_dia : '') +
         (c.estado_dia === 'recogida' ? '<br><span style="color:var(--danger);">⚠️ Ya fue registrada hoy.</span>' : '');
     } else {
-      el.innerHTML = '⚠️ El código <b>' + qrDetectado + '</b> no corresponde a una canastilla asignada para hoy.';
+      // No estaba en la lista de hoy (no se había generado asignación, o no era su día) —
+      // igual se puede registrar, el servidor la acepta si existe y está activa.
+      el.innerHTML = '✅ Código detectado: <b>' + qrDetectado + '</b>. Sube las fotos y envía para registrarla.';
     }
     document.getElementById('photos').style.display = 'flex';
     document.getElementById('cardEnviar').style.display = 'block';
