@@ -75,16 +75,36 @@
     <div class="stat pend"><div class="n" id="stPend">–</div><div class="l">Faltan</div></div>
   </div>
 
-  <div id="reader"></div>
-  <div class="scan-result" id="scanResult">Apunta la cámara al código QR de la canastilla.</div>
-
-  <div class="photos" id="photos" style="display:none;">
-    <label class="photo-slot" id="slot1"><span>Foto 1</span><input type="file" accept="image/*" capture="environment" onchange="cargarFoto(event,1)"></label>
-    <label class="photo-slot" id="slot2"><span>Foto 2</span><input type="file" accept="image/*" capture="environment" onchange="cargarFoto(event,2)"></label>
+  <!-- PASO 1: Foto ANTES de recoger -->
+  <div class="card" id="pasoAntes" style="margin-top:16px;">
+    <h1>1. Foto antes de recoger</h1>
+    <p class="sub">Toma la foto del estado actual de la canastilla, antes de escanear.</p>
+    <div class="photos">
+      <label class="photo-slot" id="slotAntes" style="aspect-ratio:auto; height:180px;">
+        <span>📷 Toca para tomar la foto</span>
+        <input type="file" accept="image/*" capture="environment" onchange="cargarFotoAntes(event)">
+      </label>
+    </div>
   </div>
-  <div class="card" style="margin-top:12px;" id="cardEnviar" style="display:none;">
+
+  <!-- PASO 2: Escanear QR -->
+  <div id="pasoEscaner" style="display:none;">
+    <div id="reader"></div>
+    <div class="scan-result" id="scanResult">Apunta la cámara al código QR de la canastilla.</div>
+  </div>
+
+  <!-- PASO 3: Foto DESPUÉS de recoger + enviar -->
+  <div class="card" id="pasoDespues" style="margin-top:12px; display:none;">
+    <h1>3. Foto después de recoger</h1>
+    <p class="sub">Toma la foto ya con la canastilla vacía/recogida.</p>
+    <div class="photos">
+      <label class="photo-slot" id="slotDespues" style="aspect-ratio:auto; height:180px;">
+        <span>📷 Toca para tomar la foto</span>
+        <input type="file" accept="image/*" capture="environment" onchange="cargarFotoDespues(event)">
+      </label>
+    </div>
     <button class="primary" id="btnEnviar" onclick="enviar()" disabled>Enviar recolección</button>
-    <button class="secondary" onclick="cancelarRegistro()">Cancelar / escanear otra</button>
+    <button class="secondary" onclick="cancelarRegistro()">Cancelar / empezar de nuevo</button>
     <div class="msg" id="msgEnviar"></div>
     <div id="botonesDespuesDeEnviar" style="display:none; margin-top:10px;">
       <button class="primary" onclick="escanearOtra()">📷 Escanear otra canastilla</button>
@@ -102,7 +122,8 @@
 
   let usuario = null;
   let qrDetectado = null;
-  let foto1 = null, foto2 = null;
+  let fotoAntes = null, fotoDespues = null;
+
   let scanner = null;
   let canastillasHoyCache = [];
 
@@ -149,7 +170,7 @@
     else if(hora >= 19 || hora < 5) saludo = 'Buenas noches';
     document.getElementById('saludoTexto').textContent = saludo + ', ' + (usuario.nombre_completo || usuario.usuario).split(' ')[0] + ' 👋';
     cargarEstado();
-    iniciarScanner();
+    // El escaneo NO empieza aquí — primero hay que tomar la foto de "antes" (paso 1)
   }
 
   function cargarEstado(){
@@ -182,17 +203,15 @@
     const c = canastillasHoyCache.find(x => String(x.id_canastilla) === idBuscado);
     const el = document.getElementById('scanResult');
     if(c){
-      // Ya la conocíamos de la lista de hoy: mostramos su dirección/ruta
       el.innerHTML = '✅ <b>' + (c.direccion || 'Canastilla ' + c.id_canastilla) + '</b>' +
         (c.ruta_del_dia ? ' · Ruta ' + c.ruta_del_dia : '') +
         (c.estado_dia === 'recogida' ? '<br><span style="color:var(--danger);">⚠️ Ya fue registrada hoy.</span>' : '');
     } else {
-      // No estaba en la lista de hoy (no se había generado asignación, o no era su día) —
-      // igual se puede registrar, el servidor la acepta si existe y está activa.
-      el.innerHTML = '✅ Código detectado: <b>' + qrDetectado + '</b>. Sube las fotos y envía para registrarla.';
+      el.innerHTML = '✅ Código detectado: <b>' + qrDetectado + '</b>. Toma la foto de después para terminar.';
     }
-    document.getElementById('photos').style.display = 'flex';
-    document.getElementById('cardEnviar').style.display = 'block';
+    // Pasamos al paso 3: foto de después
+    document.getElementById('pasoDespues').style.display = 'block';
+    document.getElementById('pasoDespues').scrollIntoView({ behavior: 'smooth' });
   }
 
   // Reduce el tamaño de la foto antes de enviarla (mucho más rápido de subir sin perder calidad visible)
@@ -210,15 +229,34 @@
     img.src = dataUrl;
   }
 
-  function cargarFoto(ev, n){
+  // PASO 1: foto de "antes" — al terminar, pasa automáticamente al paso 2 (escanear)
+  function cargarFotoAntes(ev){
     const file = ev.target.files[0];
     if(!file) return;
     const reader = new FileReader();
     reader.onload = function(e){
       comprimirImagen(e.target.result, function(comprimida){
-        if(n===1){ foto1 = comprimida; document.getElementById('slot1').innerHTML = '<img src="'+foto1+'"><input type="file" accept="image/*" capture="environment" onchange="cargarFoto(event,1)">'; }
-        else{ foto2 = comprimida; document.getElementById('slot2').innerHTML = '<img src="'+foto2+'"><input type="file" accept="image/*" capture="environment" onchange="cargarFoto(event,2)">'; }
-        document.getElementById('btnEnviar').disabled = !(qrDetectado && foto1 && foto2);
+        fotoAntes = comprimida;
+        document.getElementById('slotAntes').innerHTML = '<img src="'+fotoAntes+'" style="width:100%;height:100%;object-fit:cover;">';
+        // Ya tenemos la foto de antes: mostramos el escáner y lo activamos
+        document.getElementById('pasoEscaner').style.display = 'block';
+        iniciarScanner();
+        document.getElementById('pasoEscaner').scrollIntoView({ behavior: 'smooth' });
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // PASO 3: foto de "después"
+  function cargarFotoDespues(ev){
+    const file = ev.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e){
+      comprimirImagen(e.target.result, function(comprimida){
+        fotoDespues = comprimida;
+        document.getElementById('slotDespues').innerHTML = '<img src="'+fotoDespues+'" style="width:100%;height:100%;object-fit:cover;">';
+        document.getElementById('btnEnviar').disabled = !(qrDetectado && fotoAntes && fotoDespues);
       });
     };
     reader.readAsDataURL(file);
@@ -227,7 +265,7 @@
   function enviar(){
     const btn = document.getElementById('btnEnviar');
     btn.disabled = true; btn.textContent = 'Enviando... (puede tardar unos segundos)';
-    const datos = { codigo_qr: qrDetectado, operario: usuario.usuario, imagen1Base64: foto1, imagen2Base64: foto2 };
+    const datos = { codigo_qr: qrDetectado, operario: usuario.usuario, imagen1Base64: fotoAntes, imagen2Base64: fotoDespues };
 
     function mandar(lat, lng){
       datos.latitud = lat; datos.longitud = lng;
@@ -238,7 +276,7 @@
           if(scanner) scanner.stop().catch(()=>{});
           document.getElementById('reader').innerHTML = '';
           document.getElementById('btnEnviar').style.display = 'none';
-          document.querySelector('#cardEnviar .secondary').style.display = 'none';
+          document.querySelector('#pasoDespues .secondary').style.display = 'none';
           document.getElementById('botonesDespuesDeEnviar').style.display = 'block';
           cargarEstado();
         } else {
@@ -259,26 +297,31 @@
   function escanearOtra(){
     document.getElementById('botonesDespuesDeEnviar').style.display = 'none';
     document.getElementById('btnEnviar').style.display = 'block';
-    document.querySelector('#cardEnviar .secondary').style.display = 'block';
+    document.querySelector('#pasoDespues .secondary').style.display = 'block';
     document.getElementById('msgEnviar').innerHTML = '';
     cancelarRegistro();
-    iniciarScanner();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function volverAlPanel(){
+    if(scanner) scanner.stop().catch(()=>{});
     window.location.href = URL_PANEL_OPERARIO;
   }
 
+  // Reinicia todo el flujo desde el paso 1 (foto de antes)
   function cancelarRegistro(){
-    qrDetectado = null; foto1 = null; foto2 = null;
-    document.getElementById('photos').style.display = 'none';
-    document.getElementById('cardEnviar').style.display = 'none';
-    document.getElementById('slot1').innerHTML = '<span>Foto 1</span><input type="file" accept="image/*" capture="environment" onchange="cargarFoto(event,1)">';
-    document.getElementById('slot2').innerHTML = '<span>Foto 2</span><input type="file" accept="image/*" capture="environment" onchange="cargarFoto(event,2)">';
+    qrDetectado = null; fotoAntes = null; fotoDespues = null;
+    try{ if(scanner) scanner.stop().catch(()=>{}); }catch(e){}
+    document.getElementById('reader').innerHTML = '';
+    document.getElementById('pasoEscaner').style.display = 'none';
+    document.getElementById('pasoDespues').style.display = 'none';
+    document.getElementById('slotAntes').innerHTML = '<span>📷 Toca para tomar la foto</span><input type="file" accept="image/*" capture="environment" onchange="cargarFotoAntes(event)">';
+    document.getElementById('slotDespues').innerHTML = '<span>📷 Toca para tomar la foto</span><input type="file" accept="image/*" capture="environment" onchange="cargarFotoDespues(event)">';
     document.getElementById('btnEnviar').disabled = true;
+    document.getElementById('btnEnviar').style.display = 'block';
     document.getElementById('btnEnviar').textContent = 'Enviar recolección';
+    document.querySelector('#pasoDespues .secondary').style.display = 'block';
     document.getElementById('scanResult').textContent = 'Apunta la cámara al código QR de la canastilla.';
-    try{ if(scanner) scanner.resume(); }catch(e){ /* si el escáner ya se había detenido, no pasa nada */ }
   }
 </script>
 </body>
