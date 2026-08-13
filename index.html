@@ -86,6 +86,10 @@
     <button class="primary" id="btnEnviar" onclick="enviar()" disabled>Enviar recolección</button>
     <button class="secondary" onclick="cancelarRegistro()">Cancelar / escanear otra</button>
     <div class="msg" id="msgEnviar"></div>
+    <div id="botonesDespuesDeEnviar" style="display:none; margin-top:10px;">
+      <button class="primary" onclick="escanearOtra()">📷 Escanear otra canastilla</button>
+      <button class="secondary" onclick="volverAlPanel()">⬅️ Volver al panel del operario</button>
+    </div>
   </div>
 
   <a class="logout" href="#" onclick="cerrarSesion()">Cerrar sesión</a>
@@ -94,6 +98,7 @@
 <script>
   // ⚠️ EDITA ESTA LÍNEA: pega la URL de tu app publicada (termina en /exec)
   const EXEC_URL = 'https://script.google.com/macros/s/AKfycbx2DFFMnFTRc_lZ9L82KnimuxnHRX7zndEFfgIjvkrHLcztn_PC_RJ0FBPFwgT1SmHtDQ/exec';
+  const URL_PANEL_OPERARIO = EXEC_URL + '?page=operario';
 
   let usuario = null;
   let qrDetectado = null;
@@ -190,21 +195,38 @@
     document.getElementById('cardEnviar').style.display = 'block';
   }
 
+  // Reduce el tamaño de la foto antes de enviarla (mucho más rápido de subir sin perder calidad visible)
+  function comprimirImagen(dataUrl, callback){
+    const img = new Image();
+    img.onload = function(){
+      const maxAncho = 1000;
+      const escala = Math.min(1, maxAncho / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * escala;
+      canvas.height = img.height * escala;
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      callback(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.src = dataUrl;
+  }
+
   function cargarFoto(ev, n){
     const file = ev.target.files[0];
     if(!file) return;
     const reader = new FileReader();
     reader.onload = function(e){
-      if(n===1){ foto1 = e.target.result; document.getElementById('slot1').innerHTML = '<img src="'+foto1+'"><input type="file" accept="image/*" capture="environment" onchange="cargarFoto(event,1)">'; }
-      else{ foto2 = e.target.result; document.getElementById('slot2').innerHTML = '<img src="'+foto2+'"><input type="file" accept="image/*" capture="environment" onchange="cargarFoto(event,2)">'; }
-      document.getElementById('btnEnviar').disabled = !(qrDetectado && foto1 && foto2);
+      comprimirImagen(e.target.result, function(comprimida){
+        if(n===1){ foto1 = comprimida; document.getElementById('slot1').innerHTML = '<img src="'+foto1+'"><input type="file" accept="image/*" capture="environment" onchange="cargarFoto(event,1)">'; }
+        else{ foto2 = comprimida; document.getElementById('slot2').innerHTML = '<img src="'+foto2+'"><input type="file" accept="image/*" capture="environment" onchange="cargarFoto(event,2)">'; }
+        document.getElementById('btnEnviar').disabled = !(qrDetectado && foto1 && foto2);
+      });
     };
     reader.readAsDataURL(file);
   }
 
   function enviar(){
     const btn = document.getElementById('btnEnviar');
-    btn.disabled = true; btn.textContent = 'Enviando...';
+    btn.disabled = true; btn.textContent = 'Enviando... (puede tardar unos segundos)';
     const datos = { codigo_qr: qrDetectado, operario: usuario.usuario, imagen1Base64: foto1, imagen2Base64: foto2 };
 
     function mandar(lat, lng){
@@ -212,8 +234,12 @@
       llamarApi({ action:'registrar', datos: datos }).then(res => {
         const msgEl = document.getElementById('msgEnviar');
         if(res.ok){
-          msgEl.innerHTML = '<div class="msg ok">' + res.mensaje + ' 👍 Escanea la siguiente cuando quieras.</div>';
-          cancelarRegistro();
+          msgEl.innerHTML = '<div class="msg ok">' + res.mensaje + '</div>';
+          if(scanner) scanner.stop().catch(()=>{});
+          document.getElementById('reader').innerHTML = '';
+          document.getElementById('btnEnviar').style.display = 'none';
+          document.querySelector('#cardEnviar .secondary').style.display = 'none';
+          document.getElementById('botonesDespuesDeEnviar').style.display = 'block';
           cargarEstado();
         } else {
           msgEl.innerHTML = '<div class="msg err">' + res.mensaje + '</div>';
@@ -230,6 +256,19 @@
     } else { mandar('', ''); }
   }
 
+  function escanearOtra(){
+    document.getElementById('botonesDespuesDeEnviar').style.display = 'none';
+    document.getElementById('btnEnviar').style.display = 'block';
+    document.querySelector('#cardEnviar .secondary').style.display = 'block';
+    document.getElementById('msgEnviar').innerHTML = '';
+    cancelarRegistro();
+    iniciarScanner();
+  }
+
+  function volverAlPanel(){
+    window.location.href = URL_PANEL_OPERARIO;
+  }
+
   function cancelarRegistro(){
     qrDetectado = null; foto1 = null; foto2 = null;
     document.getElementById('photos').style.display = 'none';
@@ -239,7 +278,7 @@
     document.getElementById('btnEnviar').disabled = true;
     document.getElementById('btnEnviar').textContent = 'Enviar recolección';
     document.getElementById('scanResult').textContent = 'Apunta la cámara al código QR de la canastilla.';
-    if(scanner) scanner.resume();
+    try{ if(scanner) scanner.resume(); }catch(e){ /* si el escáner ya se había detenido, no pasa nada */ }
   }
 </script>
 </body>
