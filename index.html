@@ -25,6 +25,11 @@
   button.primary{width:100%; padding:14px; border:none; border-radius:10px; background:var(--naranja); color:#fff; font-weight:700; font-size:15px; cursor:pointer;}
   button.primary:disabled{opacity:.4;}
   button.secondary{width:100%; margin-top:8px; padding:12px; border-radius:10px; background:transparent; color:var(--muted); border:1px solid #ddd; font-size:13px; cursor:pointer;}
+  .estados{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:6px 0 16px;}
+  .estados button{padding:12px 8px; border-radius:10px; border:2px solid #e2e2e2; background:#fff; color:var(--text); font-size:14px; font-weight:600; cursor:pointer;}
+  .estados button.sel{border-color:var(--naranja); background:#fff3e0; color:#8a5a00;}
+  .estados button.sel.ok{border-color:var(--verde); background:#eef7d8; color:#4b6b10;}
+  .estados button.sel.mal{border-color:var(--danger); background:#fdecec; color:var(--danger);}
   .msg{margin-top:14px; font-size:13px; padding:10px 12px; border-radius:8px;}
   .msg.ok{background:rgba(140,190,42,.12); color:#5c8317;}
   .msg.err{background:rgba(229,72,77,.1); color:var(--danger);}
@@ -75,27 +80,16 @@
     <div class="stat pend"><div class="n" id="stPend">–</div><div class="l">Faltan</div></div>
   </div>
 
-  <!-- PASO 1: Foto ANTES de recoger -->
-  <div class="card" id="pasoAntes" style="margin-top:16px;">
-    <h1>1. Foto antes de recoger</h1>
-    <p class="sub">Toma la foto del estado actual de la canastilla, antes de escanear.</p>
-    <div class="photos">
-      <label class="photo-slot" id="slotAntes" style="aspect-ratio:auto; height:180px;">
-        <span>📷 Toca para tomar la foto</span>
-        <input type="file" accept="image/*" capture="environment" onchange="cargarFotoAntes(event)">
-      </label>
-    </div>
-  </div>
-
-  <!-- PASO 2: Escanear QR -->
-  <div id="pasoEscaner" style="display:none;">
+  <!-- PASO 1: Escanear QR (arranca solo al entrar) -->
+  <div class="card" id="pasoEscaner" style="margin-top:16px;">
+    <h1>1. Escanea el código QR</h1>
     <div id="reader"></div>
     <div class="scan-result" id="scanResult">Apunta la cámara al código QR de la canastilla.</div>
   </div>
 
   <!-- PASO 3: Foto DESPUÉS de recoger + enviar -->
   <div class="card" id="pasoDespues" style="margin-top:12px; display:none;">
-    <h1>3. Foto después de recoger</h1>
+    <h1>2. Foto después de recoger</h1>
     <p class="sub">Toma la foto ya con la canastilla vacía/recogida.</p>
     <div class="photos">
       <label class="photo-slot" id="slotDespues" style="aspect-ratio:auto; height:180px;">
@@ -103,6 +97,18 @@
         <input type="file" accept="image/*" capture="environment" onchange="cargarFotoDespues(event)">
       </label>
     </div>
+    <h1 style="margin-top:6px;">3. Estado y observaciones</h1>
+    <label>¿En qué estado está la canastilla?</label>
+    <div class="estados" id="estadosFisicos">
+      <button type="button" data-v="buena" data-c="ok" onclick="elegirEstado(this)">✅ Buena</button>
+      <button type="button" data-v="regular" onclick="elegirEstado(this)">🟡 Regular</button>
+      <button type="button" data-v="mal_estado" data-c="mal" onclick="elegirEstado(this)">🔴 Mal estado</button>
+      <button type="button" data-v="falta_tapa" data-c="mal" onclick="elegirEstado(this)">⚠️ Falta tapa</button>
+      <button type="button" data-v="falta_cesta" data-c="mal" onclick="elegirEstado(this)">⚠️ Falta cesta</button>
+      <button type="button" data-v="no_esta" data-c="mal" onclick="elegirEstado(this)">❌ No está</button>
+    </div>
+    <label>Observaciones (opcional)</label>
+    <textarea id="observaciones" rows="3" placeholder="Ej: tapa rota, la tiraron al lado, falta limpiar..." style="width:100%; padding:12px 14px; margin:6px 0 16px; border-radius:10px; border:1px solid #e2e2e2; background:#fafafa; font-size:15px; font-family:inherit;"></textarea>
     <button class="primary" id="btnEnviar" onclick="enviar()" disabled>Enviar recolección</button>
     <button class="secondary" onclick="cancelarRegistro()">Cancelar / empezar de nuevo</button>
     <div class="msg" id="msgEnviar"></div>
@@ -122,7 +128,20 @@
 
   let usuario = null;
   let qrDetectado = null;
-  let fotoAntes = null, fotoDespues = null;
+  let fotoDespues = null;
+  let estadoFisico = null; // buena | regular | mal_estado | falta_tapa | falta_cesta | no_esta
+
+  function elegirEstado(btn){
+    estadoFisico = btn.getAttribute('data-v');
+    document.querySelectorAll('#estadosFisicos button').forEach(b => b.classList.remove('sel','ok','mal'));
+    btn.classList.add('sel');
+    if(btn.getAttribute('data-c')) btn.classList.add(btn.getAttribute('data-c'));
+    actualizarBotonEnviar();
+  }
+
+  function actualizarBotonEnviar(){
+    document.getElementById('btnEnviar').disabled = !(qrDetectado && fotoDespues && estadoFisico);
+  }
 
   let scanner = null;
   let canastillasHoyCache = [];
@@ -170,7 +189,7 @@
     else if(hora >= 19 || hora < 5) saludo = 'Buenas noches';
     document.getElementById('saludoTexto').textContent = saludo + ', ' + (usuario.nombre_completo || usuario.usuario).split(' ')[0] + ' 👋';
     cargarEstado();
-    // El escaneo NO empieza aquí — primero hay que tomar la foto de "antes" (paso 1)
+    iniciarScanner(); // el escáner arranca de una vez
   }
 
   function cargarEstado(){
@@ -209,7 +228,7 @@
     } else {
       el.innerHTML = '✅ Código detectado: <b>' + qrDetectado + '</b>. Toma la foto de después para terminar.';
     }
-    // Pasamos al paso 3: foto de después
+    // Pasamos al paso 2 y 3: foto de después, estado y observaciones
     document.getElementById('pasoDespues').style.display = 'block';
     document.getElementById('pasoDespues').scrollIntoView({ behavior: 'smooth' });
   }
@@ -229,25 +248,7 @@
     img.src = dataUrl;
   }
 
-  // PASO 1: foto de "antes" — al terminar, pasa automáticamente al paso 2 (escanear)
-  function cargarFotoAntes(ev){
-    const file = ev.target.files[0];
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e){
-      comprimirImagen(e.target.result, function(comprimida){
-        fotoAntes = comprimida;
-        document.getElementById('slotAntes').innerHTML = '<img src="'+fotoAntes+'" style="width:100%;height:100%;object-fit:cover;">';
-        // Ya tenemos la foto de antes: mostramos el escáner y lo activamos
-        document.getElementById('pasoEscaner').style.display = 'block';
-        iniciarScanner();
-        document.getElementById('pasoEscaner').scrollIntoView({ behavior: 'smooth' });
-      });
-    };
-    reader.readAsDataURL(file);
-  }
-
-  // PASO 3: foto de "después"
+  // PASO 2: foto de "después"
   function cargarFotoDespues(ev){
     const file = ev.target.files[0];
     if(!file) return;
@@ -256,7 +257,7 @@
       comprimirImagen(e.target.result, function(comprimida){
         fotoDespues = comprimida;
         document.getElementById('slotDespues').innerHTML = '<img src="'+fotoDespues+'" style="width:100%;height:100%;object-fit:cover;">';
-        document.getElementById('btnEnviar').disabled = !(qrDetectado && fotoAntes && fotoDespues);
+        actualizarBotonEnviar();
       });
     };
     reader.readAsDataURL(file);
@@ -265,7 +266,7 @@
   function enviar(){
     const btn = document.getElementById('btnEnviar');
     btn.disabled = true; btn.textContent = 'Enviando... (puede tardar unos segundos)';
-    const datos = { codigo_qr: qrDetectado, operario: usuario.usuario, imagen1Base64: fotoAntes, imagen2Base64: fotoDespues };
+    const datos = { codigo_qr: qrDetectado, operario: usuario.usuario, imagen2Base64: fotoDespues, estado_fisico: estadoFisico, observaciones: document.getElementById('observaciones').value.trim() };
 
     function mandar(lat, lng){
       datos.latitud = lat; datos.longitud = lng;
@@ -295,12 +296,7 @@
   }
 
   function escanearOtra(){
-    document.getElementById('botonesDespuesDeEnviar').style.display = 'none';
-    document.getElementById('btnEnviar').style.display = 'block';
-    document.querySelector('#pasoDespues .secondary').style.display = 'block';
-    document.getElementById('msgEnviar').innerHTML = '';
     cancelarRegistro();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function volverAlPanel(){
@@ -308,20 +304,26 @@
     window.location.href = URL_PANEL_OPERARIO;
   }
 
-  // Reinicia todo el flujo desde el paso 1 (foto de antes)
+  // Reinicia todo el flujo desde el paso 1 (escanear) y vuelve a abrir la cámara
   function cancelarRegistro(){
-    qrDetectado = null; fotoAntes = null; fotoDespues = null;
-    try{ if(scanner) scanner.stop().catch(()=>{}); }catch(e){}
-    document.getElementById('reader').innerHTML = '';
-    document.getElementById('pasoEscaner').style.display = 'none';
+    qrDetectado = null; fotoDespues = null; estadoFisico = null;
+    document.querySelectorAll('#estadosFisicos button').forEach(b => b.classList.remove('sel','ok','mal'));
+    document.getElementById('observaciones').value = '';
     document.getElementById('pasoDespues').style.display = 'none';
-    document.getElementById('slotAntes').innerHTML = '<span>📷 Toca para tomar la foto</span><input type="file" accept="image/*" capture="environment" onchange="cargarFotoAntes(event)">';
     document.getElementById('slotDespues').innerHTML = '<span>📷 Toca para tomar la foto</span><input type="file" accept="image/*" capture="environment" onchange="cargarFotoDespues(event)">';
     document.getElementById('btnEnviar').disabled = true;
     document.getElementById('btnEnviar').style.display = 'block';
     document.getElementById('btnEnviar').textContent = 'Enviar recolección';
     document.querySelector('#pasoDespues .secondary').style.display = 'block';
+    document.getElementById('botonesDespuesDeEnviar').style.display = 'none';
+    document.getElementById('msgEnviar').innerHTML = '';
     document.getElementById('scanResult').textContent = 'Apunta la cámara al código QR de la canastilla.';
+    const parar = scanner ? scanner.stop().catch(()=>{}) : Promise.resolve();
+    parar.then(function(){
+      document.getElementById('reader').innerHTML = '';
+      iniciarScanner();
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 </script>
 </body>
