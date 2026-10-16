@@ -144,6 +144,7 @@
   }
 
   let scanner = null;
+  let iniciandoScanner = false; // evita abrir la cámara dos veces a la vez
   let canastillasHoyCache = [];
 
   function llamarApi(payload){
@@ -201,23 +202,57 @@
     });
   }
 
+  // Apaga la cámara de verdad y espera a que termine (con tiempo máximo, para que nunca se quede colgado).
+  function detenerScanner_(){
+    return new Promise(function(resolve){
+      const fin = function(){
+        // Por si acaso: soltar la cámara a la fuerza para que se pueda volver a abrir
+        document.querySelectorAll('#reader video').forEach(function(v){
+          try{ if(v.srcObject) v.srcObject.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+        });
+        try{ if(scanner) scanner.clear(); }catch(e){}
+        scanner = null;
+        document.getElementById('reader').innerHTML = '';
+        setTimeout(resolve, 350); // pequeña pausa: algunos celulares tardan en liberar la cámara
+      };
+      if(!scanner){ fin(); return; }
+      let terminado = false;
+      const una = function(){ if(!terminado){ terminado = true; fin(); } };
+      setTimeout(una, 2000); // si stop() se cuelga, seguimos igual
+      try{
+        scanner.stop().then(una).catch(una);
+      }catch(e){ una(); }
+    });
+  }
+
   function iniciarScanner(){
-    scanner = new Html5Qrcode('reader');
-    scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: 230 },
-      (decodedText) => {
-        qrDetectado = decodedText;
-        mostrarConfirmacion();
-      },
-      () => {}
-    ).catch(err => {
-      document.getElementById('scanResult').innerHTML = '⚠️ No se pudo abrir la cámara: ' + err;
+    if(iniciandoScanner) return;
+    iniciandoScanner = true;
+    detenerScanner_().then(function(){
+      document.getElementById('scanResult').textContent = 'Abriendo la cámara...';
+      scanner = new Html5Qrcode('reader');
+      scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: 230 },
+        (decodedText) => {
+          if(qrDetectado) return; // ya hay uno leído
+          qrDetectado = decodedText;
+          mostrarConfirmacion();
+        },
+        () => {}
+      ).then(function(){
+        iniciandoScanner = false;
+        document.getElementById('scanResult').textContent = 'Apunta la cámara al código QR de la canastilla.';
+      }).catch(err => {
+        iniciandoScanner = false;
+        document.getElementById('scanResult').innerHTML = '⚠️ No se pudo abrir la cámara: ' + err +
+          '<br><button class="secondary" style="margin-top:8px;" onclick="iniciarScanner()">🔄 Reintentar cámara</button>';
+      });
     });
   }
 
   function mostrarConfirmacion(){
-    scanner.pause();
+    try{ scanner.pause(true); }catch(e){}
     const idBuscado = String(qrDetectado).replace('CANASTILLA-', '');
     const c = canastillasHoyCache.find(x => String(x.id_canastilla) === idBuscado);
     const el = document.getElementById('scanResult');
@@ -274,8 +309,7 @@
         const msgEl = document.getElementById('msgEnviar');
         if(res.ok){
           msgEl.innerHTML = '<div class="msg ok">' + res.mensaje + '</div>';
-          if(scanner) scanner.stop().catch(()=>{});
-          document.getElementById('reader').innerHTML = '';
+          detenerScanner_();
           document.getElementById('btnEnviar').style.display = 'none';
           document.querySelector('#pasoDespues .secondary').style.display = 'none';
           document.getElementById('botonesDespuesDeEnviar').style.display = 'block';
@@ -300,8 +334,7 @@
   }
 
   function volverAlPanel(){
-    if(scanner) scanner.stop().catch(()=>{});
-    window.location.href = URL_PANEL_OPERARIO;
+    detenerScanner_().then(function(){ window.location.href = URL_PANEL_OPERARIO; });
   }
 
   // Reinicia todo el flujo desde el paso 1 (escanear) y vuelve a abrir la cámara
@@ -318,11 +351,8 @@
     document.getElementById('botonesDespuesDeEnviar').style.display = 'none';
     document.getElementById('msgEnviar').innerHTML = '';
     document.getElementById('scanResult').textContent = 'Apunta la cámara al código QR de la canastilla.';
-    const parar = scanner ? scanner.stop().catch(()=>{}) : Promise.resolve();
-    parar.then(function(){
-      document.getElementById('reader').innerHTML = '';
-      iniciarScanner();
-    });
+    iniciandoScanner = false;
+    iniciarScanner(); // apaga la anterior (si sigue encendida), espera y abre una nueva
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 </script>
