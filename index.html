@@ -68,6 +68,7 @@
   <label>Contraseña</label>
   <input id="loginPassword" type="password" autocomplete="current-password">
   <button class="primary" onclick="iniciarSesion()">Ingresar</button>
+  <div style="text-align:center; margin-top:14px;"><a href="#" onclick="recuperarContrasena(); return false;" style="color:var(--verde); font-size:13px; font-weight:600; text-decoration:none;">¿Olvidaste tu contraseña?</a></div>
   <div class="msg" id="msgLogin"></div>
 </div>
 
@@ -173,6 +174,17 @@
       usuario = res.usuario;
       localStorage.setItem('escaner_usuario', JSON.stringify(usuario));
       mostrarPanelEscaner();
+    }).catch(err => { msgEl.innerHTML = '<div class="msg err">Error de conexión: ' + err.message + '</div>'; });
+  }
+
+  // "¿Olvidaste tu contraseña?": escribe tu usuario arriba y te llega al correo registrado.
+  function recuperarContrasena(){
+    const u = document.getElementById('loginUsuario').value.trim();
+    const msgEl = document.getElementById('msgLogin');
+    if(!u){ msgEl.innerHTML = '<div class="msg err">Escribe tu usuario arriba y vuelve a pulsar "¿Olvidaste tu contraseña?".</div>'; return; }
+    msgEl.innerHTML = '<div class="msg ok">Enviando...</div>';
+    llamarApi({ action:'recuperar', usuario:u }).then(res => {
+      msgEl.innerHTML = '<div class="msg ' + (res.ok ? 'ok' : 'err') + '">' + res.mensaje + '</div>';
     }).catch(err => { msgEl.innerHTML = '<div class="msg err">Error de conexión: ' + err.message + '</div>'; });
   }
 
